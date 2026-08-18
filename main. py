@@ -1,0 +1,105 @@
+import subprocess
+import sys
+
+# 1. التثبيت التلقائي للمكتبات
+def install_requirements():
+    for package in ["pyrogram", "tgcrypto"]:
+        try:
+            __import__(package)
+        except ImportError:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+
+install_requirements()
+
+import asyncio
+import logging
+from pyrogram import Client, filters
+from pyrogram.types import Message
+from pyrogram.errors import UserAdminInvalid, FloodWait, PeerIdInvalid, RPCError
+
+logging.basicConfig(level=logging.INFO)
+
+# ⚠️ تم استخدام قيم API العامة الرسمية المعرف بها من تلغرام بدلاً من إنشاء API جديد
+API_ID = 6
+API_HASH = "eb066357b5211545d3065b9e03d987d6"
+BOT_TOKEN = "7772854160:AAG7Zj_VB_1-BtZ0aAwkyFypFl_kUP1Iuw8"
+
+app = Client("unban_monitor_protected", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+
+# 🛡️ درع الحماية ضد الحظر والتوقف
+async def safe_execute(message: Message, coro):
+    try:
+        return await coro
+    except FloodWait as e:
+        await message.reply_text(f"⚠️ **تنبيه أمان:** تم الوصول لحد طلبات تلغرام. الانتظار لمدة {e.value} ثانية لتجنب الحظر...")
+        await asyncio.sleep(e.value)
+        return None
+    except UserAdminInvalid:
+        await message.reply_text("❌ يرجى رفع البوت **مشرفاً** في المجموعة مع صلاحية إدارة الأعضاء.")
+        return None
+    except PeerIdInvalid:
+        await message.reply_text("❌ المعرف أو الآيدي غير صحيح.")
+        return None
+    except RPCError as e:
+        await message.reply_text(f"❌ خطأ تقني: {e.MESSAGE}")
+        return None
+
+@app.on_message(filters.command("start"))
+async def start_cmd(client: Client, message: Message):
+    welcome_text = (
+        f"👋 أهلاً بك يا {message.from_user.mention}\n\n"
+        "🛡 **البوت جاهز للعمل ومزود بدرع حماية متكامل ضد الحظر.**\n\n"
+        "🔹 `/unban [معرف أو ID]` - لفك الحظر عن عضو.\n"
+        "🔹 `/check [معرف أو ID]` - للتحقق ورصد حالة الحساب."
+    )
+    await message.reply_text(welcome_text)
+
+@app.on_message(filters.command("unban") & filters.group)
+async def unban_user(client: Client, message: Message):
+    if len(message.command) < 2:
+        await message.reply_text("ℹ️ أرسل معرف أو ID الحساب بعد الأمر. مثال:\n`/unban @username`")
+        return
+
+    target = message.command[1]
+    
+    async def action():
+        await client.unban_chat_member(chat_id=message.chat.id, user_id=target)
+        await message.reply_text(f"✅ تم فك الحظر بنجاح عن: `{target}`")
+
+    await safe_execute(message, action())
+    await asyncio.sleep(1.5)
+
+@app.on_message(filters.command("check"))
+async def check_user(client: Client, message: Message):
+    if len(message.command) < 2:
+        await message.reply_text("ℹ️ أرسل معرف أو ID الحساب للرصد.")
+        return
+
+    target = message.command[1]
+    
+    async def action():
+        user = await client.get_users(target)
+        info = (
+            f"🔍 **تقرير الرصد:**\n\n"
+            f"👤 **الاسم:** {user.first_name}\n"
+            f"🆔 **الـ ID:** `{user.id}`\n"
+            f"🚫 **الحالة:** {'مقيّد ⚠️' if user.is_restricted else 'سليم ✅'}"
+        )
+        await message.reply_text(info)
+
+    await safe_execute(message, action())
+    await asyncio.sleep(1)
+
+# 🔄 تشغيل متواصل 24/7
+async def run_bot():
+    while True:
+        try:
+            print("🚀 البوت يعمل الآن بنجاح مع قيم الاتصال العامة...")
+            await app.start()
+            await asyncio.Event().wait()
+        except Exception as e:
+            print(f"⚠️ جاري إعادة الاتصال: {e}")
+            await asyncio.sleep(5)
+
+if __name__ == "__main__":
+    asyncio.run(run_bot())
